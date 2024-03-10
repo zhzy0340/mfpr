@@ -1,0 +1,49 @@
+#学习大脑皮层映射
+#标签记录 header = TRUE：这个参数告诉read.csv()函数第一行是包含列名称的标题行。
+glasser.parcel.labels <- read.csv("/cbica/projects/spatiotemp_dev_plasticity/Maps/parcellations/surface/glasser360_regionlist.csv", header = T) #glasser region list
+#
+S.A.axis.cifti <- read_cifti("/cbica/projects/spatiotemp_dev_plasticity/Maps/S-A_ArchetypalAxis/FSLRVertex/SensorimotorAssociation_Axis_parcellated/SensorimotorAssociation.Axis.Glasser360.pscalar.nii") #S-A_ArchetypalAxis repo, vertex-wise axis average ranks
+S.A.axis <- as.data.frame(cbind(rank(S.A.axis.cifti$data), names(S.A.axis.cifti$Parcel)))
+#
+这行代码将读取到的 CIFTI 数据转换为数据框，并将数据的排名与相应的分区名称绑定到一起。
+rank() 函数用于计算数据的排名。
+cbind() 函数用于将排名和分区名称组合成一个数据框。
+#给数据框 S.A.axis 设置了列名，将第一列命名为 "SA.axis"，第二列命名为 "orig_parcelname"。
+colnames(S.A.axis) <- c("SA.axis","orig_parcelname")
+S.A.axis <- merge(S.A.axis, glasser.parcel.labels, by="orig_parcelname", sort = F)
+#这行代码将刚才创建的数据框 S.A.axis 与之前读取的 Glasser 大脑皮层分区标签信息合并，合并键是 "orig_parcelname"。合并的依据是 S.A.axis 数据框中的 "orig_parcelname" 列和 glasser.parcel.labels 数据框中的相同列。合并后的结果存储在变量 S.A.axis 中。
+#merge() 函数用于合并两个数据框。
+S.A.axis$SA.axis <- as.numeric(S.A.axis$SA.axis)
+#这行代码将 "SA.axis" 列的数据类型转换为数值型。
+rm(S.A.axis.cifti)
+#这行代码从环境中删除了之前读取的 CIFTI 数据，即变量 S.A.axis.cifti。
+
+#-------------gam----------
+gam.age.glasser <- read.csv("/cbica/projects/spatiotemp_dev_plasticity/FluctuationAmplitude/GAMRESULTS/fluctuationamplitude_age_statistics_glasser.csv") #GAM age smooth statistics, generated with fitGAMs_fluctuationamplitude_age.R
+
+#create df.dev with GAM statistics, S-A axis, plasticity measures, and SNR mask
+#这一行创建了一个列表，其中包含了几个数据框的名称，即gam.age.glasser、S.A.axis、myelin和SNR.mask。
+df.list <- list(gam.age.glasser, S.A.axis, myelin, SNR.mask) #dfs to merge
+#这一行将上述列表中的数据框逐个进行合并，使用 merge() 函数，将它们按照共同的列合并，all=TRUE 表示保留所有行，sort=F 表示不排序。结果存储在 df.dev 中。
+df.dev <- Reduce(function(x,y) merge(x,y, all=TRUE, sort=F), df.list) 
+#这一行对列进行重新排序，确保 label 和 orig_parcelname 列在前面。
+df.dev <- df.dev %>% select(label, orig_parcelname, everything()) #order columns
+cols = c(3:15)    
+
+#对选定的列应用函数。apply() 函数用于在矩阵或数组的行或列上应用函数。
+#在这里，第一个参数是要操作的数据框 df.dev 中的列（通过 df.dev[,cols] 选择），第二个参数 2 指示应用函数到列上，而不是行。
+#然后，function(x) as.numeric(as.character(x)) 是应用的函数，它将每个列中的元素都转换为字符型，然后再转换为数值型。这句话的整体意思是将数据框 df.dev 中指定的列（由 cols 变量指定）中的所有元素都转换为数值型数据
+df.dev[,cols] = apply(df.dev[,cols], 2, function(x) as.numeric(as.character(x))) #format numerics
+
+#这一行创建了一个新的数据框 df.dev.spin，通过将 df.dev 的右半部分连接到其左半部分，从而创建一个左半部分对应左半脑，右半部分对应右半脑的数据框。这是为了进行后续的空间置换测试而进行的操作。
+#create df.dev.spin formatted for spatial permutation testing
+df.dev.spin <- rbind(df.dev[181:360,], df.dev[1:180,]) #format df as left hemisphere -> right hemisphere for spin tests
+
+#将 df.dev.spin 数据框中 SNR.mask 列中值为0的行的 GAM.age.partialR2 列的值设置为 NA。
+#这意味着将低 SNR 区域的 GAM.age.partialR2 值设置为缺失值，以便后续的分析中将它们视为类似于大脑中间区域（medial wall）的处理。
+df.dev.spin$GAM.age.partialR2[df.dev.spin$SNR.mask == 0] <- NA #format data for spin tests by assigning NA to low SNR parcels, treating them like the medial wall
+#将 df.dev.spin 数据框中 SNR.mask 列中值为0的行的 minage.decrease 列的值设置为 NA。同样，这是为了将低 SNR 区域的 minage.decrease 值设置为缺失值，以便后续处理中将其视为类似于大脑中间区域。
+df.dev.spin$minage.decrease[df.dev.spin$SNR.mask == 0] <- NA 
+#筛选了 df.dev 数据框，只保留了 SNR.mask 列中值不为0的行，即保留了高 SNR 区域的数据。结果存储在 df.dev 中，以便后续的分析。
+df.dev <- df.dev %>% filter(SNR.mask != 0) #include only high SNR parcels (N=336) in analyses
+df.dev$SA.axis.bin <- as.numeric(cut2(df.dev$SA.axis, g=10)) #divide the S-A axis into 10 ranked bins
