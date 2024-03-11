@@ -46,4 +46,86 @@ df.dev.spin$GAM.age.partialR2[df.dev.spin$SNR.mask == 0] <- NA #format data for 
 df.dev.spin$minage.decrease[df.dev.spin$SNR.mask == 0] <- NA 
 #筛选了 df.dev 数据框，只保留了 SNR.mask 列中值不为0的行，即保留了高 SNR 区域的数据。结果存储在 df.dev 中，以便后续的分析。
 df.dev <- df.dev %>% filter(SNR.mask != 0) #include only high SNR parcels (N=336) in analyses
+#这一行将数据框 df.dev 中的 SA.axis 列切分为10个等级，并将结果存储在 SA.axis.bin 列中。
 df.dev$SA.axis.bin <- as.numeric(cut2(df.dev$SA.axis, g=10)) #divide the S-A axis into 10 ranked bins
+
+#内连接（inner join）操作，将两个数据框 gam.fitted.glasser 和 df.dev 进行合并。
+#合并的依据是它们之间的共同列 "label"。
+#内连接会保留两个数据框中都有的行，并且只保留那些 "label" 列中存在于两个数据框中的值。参数 sort = F 指示不对合并后的数据进行排序。合并后的结果覆盖了原来的 gam.fitted.glasser 数据框，并存储在 gam.fitted.glasser 中。
+gam.fitted.glasser <- read.csv("/cbica/projects/spatiotemp_dev_plasticity/FluctuationAmplitude/GAMRESULTS/fluctuationamplitude_age_predictedfits_glasser.csv") #GAM predicted fits, generated with fitGAMs_fluctuationamplitude_age.R
+gam.fitted.glasser <- inner_join(gam.fitted.glasser, df.dev, by="label", sort = F)
+
+gam.smoothestimates.glasser.lh <- gam.smoothestimates.glasser[33401:67200,]
+#这是用于创建ggplot对象的语句。它指定了绘图所使用的数据框（gam.smoothestimates.glasser.lh），并设置了绘图的基本映射：
+#x轴使用数据中的age列，y轴使用数据中的est列，group参数指定了每个曲线的分组，而color参数根据GAM.age.partialR2列的值来给曲线着色。
+ggplot(gam.smoothestimates.glasser.lh,aes(age,est,group=index,color=GAM.age.partialR2)) + 
+#这行代码添加了一条线条图层，用于绘制基于年龄的平滑曲线。size参数设置了线条的粗细，alpha参数设置了线条的透明度。
+  geom_line(size=.3, alpha = .8) + 
+#这行代码使用paletteer包中的函数scale_color_paletteer_c对颜色进行调整。它指定了颜色调色板（"pals::ocean.matter"）以及一些其他参数，例如颜色的范围限制和超出边界的处理方式。
+  paletteer::scale_color_paletteer_c("pals::ocean.matter", direction = -1, limits = c(-0.07, .03), oob = squish) +
+#这行代码设置了绘图的主题样式为经典主题。  
+theme_classic() +
+#这行代码设置了x轴和y轴的标签。
+  labs(x = "\nAge", y = "Fluctuation Amplitude (zero centered)\n" ) +
+#这行代码隐藏了图例，因为颜色已经通过GAM.age.partialR2列来编码。
+  theme(legend.position = "none") +
+#这行代码设置了坐标轴的文本样式、轴线样式和刻度样式。
+  theme(axis.text = element_text(size=6, family = "Arial", color = c("black")), axis.title = element_text(size=6, family = "Arial", color = c("black")), axis.line = element_line(size=.22), axis.ticks = element_line(size=.22)) +
+#这行代码设置了x轴的刻度，使其只显示指定的刻度值，并且设置了坐标轴的扩展（expand）参数，该参数控制绘图区域的额外空间大小。
+  scale_x_continuous(breaks=c(8, 10, 12, 14, 16, 18, 20, 22), expand = c(0,.45))
+
+
+#这行代码使用filter()函数从数据框df.dev中选择标签为rh_R_V1的数据，然后将结果保存到名为V1.dev的新数据框中。这意味着仅包含rh_R_V1区域的数据将被用于后续的可视化。
+V1.dev <- df.dev %>% filter(label == "rh_R_V1")
+#这行代码使用ggseg()函数创建了一个基于脑区的分段热图。
+#参数.data指定了要使用的数据，这里是之前筛选得到的V1.dev数据框；atlas参数指定了使用的脑区分区，这里是glasser；mapping参数指定了要在热图中映射的变量，这里fill映射了GAM.age.partialR2，colour映射了一个固定的颜色#ED8B65，size指定了点的大小为0.03；position参数设置了堆叠的位置方式，这里是"stacked"；
+#hemisphere参数指定了脑的半球，这里是右侧（"right"）；view参数指定了视角，这里是中间（"medial"）。
+ggseg(.data = V1.dev, atlas = "glasser", mapping=aes(fill=GAM.age.partialR2, colour=I("#ED8B65"), size=I(.03)), position = c("stacked"), hemisphere = "right", view = "medial" ) + 
+  theme_void() + 
+#这行代码用于设置图例的标签，这里将填充的颜色标签设为空字符串，意味着图例不显示填充颜色的标签。
+  labs(fill="") +
+#这行代码用于调整填充颜色的调色板，参数"pals::ocean.matter"指定了调色板名称，na.value="transparent"设置了当值为NA时填充颜色为透明，direction = -1表示颜色梯度反向，limits = c(-0.07, .03)指定了颜色梯度的范围，oob = squish设置了超出边界值的处理方式为收缩（squish）。
+  paletteer::scale_fill_paletteer_c("pals::ocean.matter", na.value="transparent", direction = -1, limits = c(-0.07, .03), oob = squish) +
+#这行代码设置了图例的位置为无，意味着不显示图例。
+  theme(legend.position = "none")
+
+#这段代码实际上是一个数据可视化过程，它包含了两个子图，并将它们垂直堆叠在一起以创建一个整体图形。
+p24pr.smooth <- gam.fitted.glasser %>%filter(label == "rh_R_p24pr")
+p24pr.derivatives <- gam.derivatives.glasser %>% filter(label == "rh_R_p24pr")
+#这行代码创建了一个基础的 ggplot 对象，其中 data 参数指定了数据集为 fluctuations.glasser.pnc，aes() 函数指定了 x 轴为 age 列，y 轴为 rh_R_p24pr 列。
+scatterplot <- ggplot(data = fluctuations.glasser.pnc, aes(x = age, y = rh_R_p24pr)) +
+#这行代码添加了散点层，用小圆点表示数据点。color 参数指定了散点的颜色为 #e06d65，size 参数指定了散点的大小为 0.3。
+  geom_point(color = "#e06d65", size = .3) +
+#这行代码添加了一条曲线，用来表示对 rh_R_p24pr 数据的平滑拟合线。data 参数指定了使用的数据集为 p24pr.smooth，aes() 函数指定了 x 轴为 age 列，y 轴为 fitted 列。color 参数指定了曲线的颜色为 #D54D55，size 参数指定了曲线的粗细为 1。
+  geom_line(data = p24pr.smooth, aes(x = age, y = fitted), color="#D54D55", size = 1) +
+#这行代码添加了一个区域，表示拟合线的置信区间。data 参数指定了使用的数据集为 p24pr.smooth，aes() 函数指定了 x 轴为 age 列，y 轴为 fitted 列，ymin 和 ymax 参数分别指定了置信区间的下限和上限。alpha 参数指定了区域的透明度为 0.7，linetype 参数指定了边界线的类型为 0（即没有边界线），fill 参数指定了区域的填充颜色为 #D54D55。
+  geom_ribbon(data = p24pr.smooth, aes(x = age, y = fitted,  ymin = lower, ymax = upper) ,alpha = .7, linetype = 0, fill="#D54D55",) +
+  labs(x="\nAge", y="Fluctuation Amplitude\n") +
+  theme_classic() +
+#这行代码用于设置其他主题样式，包括坐标轴的文字大小、颜色、线条大小等。
+#axis.text 参数设置了坐标轴刻度标签的大小、字体和颜色，axis.title.x 和 axis.title.y 参数设置了 x 轴和 y 轴标题的大小、字体和颜色，axis.line 和 axis.ticks 参数设置了坐标轴线条和刻度的大小，expand 参数设置了坐标轴的范围扩展。
+  theme(
+  axis.text = element_text(size=6, family = "Arial", color = c("black")),
+  axis.title.x=element_text(size=6, family ="Arial", color = c("black")),
+  axis.title.y=element_text(size=6, family ="Arial", color = c("black")),
+  axis.line = element_line(size=.22), axis.ticks = element_line(size=.22)) +
+  scale_x_continuous(breaks=c(8, 12, 16, 20), expand = c(0,.45)) +
+  scale_y_continuous(breaks=c(0.5, 1.0))
+#这行代码添加了一个瓦片层，用来绘制热图。aes() 函数指定了 x 轴为 age 列，y 轴为一个固定值 .1，fill 参数用来表示派生数据的显著性。
+derivplot <- ggplot(data = p24pr.derivatives) + 
+  geom_tile(aes(x = age, y = .1, fill = significant.derivative)) +
+#这行代码用于调整填充颜色的渐变。high 参数指定了颜色的高端值为 #DF5E54，透明度为 0.7，low 参数指定了颜色的低端值为 #D54D55，na.value 参数指定了缺失值的颜色为 white，limits 参数设置了颜色映射的值范围。
+  scale_fill_gradient(high = alpha("#DF5E54",0.7), low = "#D54D55", na.value = "white", limits = c(min(p24pr.derivatives$significant.derivative),-.001)) +
+  labs(x="\nAge", fill = "Derivative") + 
+  theme_classic() +
+  theme(legend.position = "none") +
+  theme(axis.title.y = element_blank(),
+          axis.text = element_blank(),
+          axis.line = element_blank(),
+          axis.ticks = element_blank(),
+          axis.title = element_blank(),
+          legend.text =  element_text(size=6, family = "Arial", color = c("black"))) +
+  scale_x_continuous(breaks=c(8, 10, 12, 14, 16, 18, 20, 22), expand = c(0,.45))
+
+allplots <- list(scatterplot,derivplot)
+p24pr.plot <- cowplot::plot_grid(rel_heights = c(
